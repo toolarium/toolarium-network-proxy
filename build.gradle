@@ -2,9 +2,18 @@
  * build.gradle
  *
  * Copyright by toolarium-network-proxy, all rights reserved.
- * MIT License: https://mit-license.org
  */
+plugins {
+  id 'com.github.johnrengelman.shadow' version '7.0.0'
+}
+
 apply from: "https://raw.githubusercontent.com/toolarium/common-gradle-build/master/gradle/common.gradle"
+
+
+/***************************************************************************************
+ * define the main class name
+ ***************************************************************************************/
+//mainClassName = "com.github.toolarium.network.proxy"
 
 
 /****************************************************************************************
@@ -13,11 +22,23 @@ apply from: "https://raw.githubusercontent.com/toolarium/common-gradle-build/mas
 dependencies {
     // see https://docs.gradle.org/current/userguide/java_library_plugin.html
 
-    // utilities
-    //implementation "net.sf.jptools:jptools:1.7.7"
-    //implementation "net.sf.jptools:jptools:1.7.7:slf4j-redirect"
+    //implementation "com.github.toolarium:com.github.toolarium.network:0.6.1"
 
     // logging
     implementation 'org.slf4j:slf4j-api:1.7.30'
-    testRuntimeOnly 'ch.qos.logback:logback-classic:1.2.3'
+    implementation "net.sf.jptools:jptools:1.7.10"
+    implementation "net.sf.jptools:jptools:1.7.10:slf4j-adapter"
+
+    // CLI
+    // https://mvnrepository.com/artifact/org.fusesource.jansi/jansi
+    implementation 'org.fusesource.jansi:jansi:2.4.0'
+
+    implementation 'info.picocli:picocli:4.7.3'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.3'
+
+    // undertow web server
+    implementation 'io.undertow:undertow-core:2.3.5.Final'
+
+    // test
+    testImplementation 'io.rest-assured:rest-assured:5.3.0'
 }
