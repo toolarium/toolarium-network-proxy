@@ -5,19 +5,25 @@
  */
 package com.github.toolarium.network.proxy;
 
+import java.net.URI;
+
+import org.fusesource.jansi.AnsiConsole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.github.toolarium.network.proxy.config.INetworkProxyConfiguration;
 import com.github.toolarium.network.proxy.config.NetworkProxyConfiguration;
 import com.github.toolarium.network.proxy.handler.health.HealthHttpHandler;
 import com.github.toolarium.network.proxy.logger.LifecycleLogger;
 import com.github.toolarium.network.proxy.logger.VerboseLevel;
 import com.github.toolarium.network.proxy.logger.access.AccessLogHttpHandler;
+
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.server.RoutingHandler;
+import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
+import io.undertow.server.handlers.proxy.ProxyHandler;
 import jptools.runtime.ReflectionUtil;
-import org.fusesource.jansi.AnsiConsole;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Help.ColorScheme;
@@ -44,16 +50,18 @@ public class NetworkProxy implements Runnable {
     private String hostname;
     @Option(names = { "-p", "--port" }, paramLabel = "port", description = "The port, by default 8080.")
     private Integer port;
-    @Option(names = { "-d", "--directory" }, paramLabel = "directory", description = "The directory, by default working path.")
-    private String directory;
-    @Option(names = { "--resourcePath" }, paramLabel = "resourcePath", description = "The resource path, by default /.")
-    private String resourcePath;
+    @Option(names = { "--proxy" }, paramLabel = "remoteServerList", description = "The remote server list.")
+    private String remoteServerList;
+    @Option(names = { "--connectionsByThread" }, paramLabel = "connectionsByThread", description = "The number of connections by thread, by default 20.")
+    private Integer connectionsByThread;
+    @Option(names = { "--maxRequestTime" }, paramLabel = "maxRequestTime", description = "The number of max max request time.")
+    private Integer maxRequestTime;
     @Option(names = { "--healthPath" }, paramLabel = "healthPath", defaultValue = "/q/health", description = "The health path, by default /q/health.")
     private String healthPath;    
     @Option(names = { "--basicauth" }, paramLabel = "authentication", description = "The basic authentication: user:password, by default disabled.")
     private String basicAuth;
-    @Option(names = { "--name" }, paramLabel = "webserverName", defaultValue = "", description = "The webserver name.")
-    private String webserverName;    
+    @Option(names = { "--name" }, paramLabel = "networkProxyName", defaultValue = "", description = "The network proxy name.")
+    private String networkProxyName;    
     @Option(names = { "--verbose" }, paramLabel = "verboseLevel", defaultValue = "INFO", description = "Specify the verbose level: (${COMPLETION-CANDIDATES}), by default INFO.")
     private VerboseLevel verboseLevel;
     @Option(names = { "-v", "--version" }, versionHelp = true, description = "Display version info")
@@ -67,9 +75,8 @@ public class NetworkProxy implements Runnable {
 
     private NetworkProxyConfiguration configuration;
     private LifecycleLogger lifecycleLogger;
-    private transient Undertow server;
+    private transient Undertow reverseProxy;
     private boolean hasError;
-
     
 
     /**
@@ -78,7 +85,7 @@ public class NetworkProxy implements Runnable {
     public NetworkProxy() {
         configuration = null;
         lifecycleLogger = new LifecycleLogger();
-        server = null;
+        reverseProxy = null;
         hasError = false;
     }
 
@@ -92,14 +99,16 @@ public class NetworkProxy implements Runnable {
         if (configuration == null) {
             setConfiguration(new NetworkProxyConfiguration()
                     .readProperties()
-                    .setRemoteServerName(webserverName)
+                    .setNetworkProxyName(networkProxyName)
                     .setHostname(hostname).setPort(port)
-                    .setDirectory(directory).setResourcePath(resourcePath)
+                    .addRemoteServerList(remoteServerList)
+                    .setConnectionsByThread(connectionsByThread)
+                    .setMaxRequestTime(maxRequestTime)
                     .setBasicAuthentication(basicAuth)
                     .setHealthPath(healthPath)
                     .setVerboseLevel(verboseLevel).setAccessLogFilePattern(accessLogFilePattern).setAccessLogFormatString(accessLogFormatString));
         }
-        
+
         return configuration;
     }
 
@@ -169,8 +178,8 @@ public class NetworkProxy implements Runnable {
      */
     public synchronized void stop() {
         if (isRunning()) {
-            server.stop();
-            server = null;
+            reverseProxy.stop();
+            reverseProxy = null;
         } else {
             LOG.warn("Network proxy is already stopped.");
         }
@@ -183,7 +192,7 @@ public class NetworkProxy implements Runnable {
      * @return true if it is running
      */
     public boolean isRunning() {
-        return (server != null);
+        return (reverseProxy != null);
     }
 
     
@@ -210,7 +219,7 @@ public class NetworkProxy implements Runnable {
         INetworkProxyConfiguration configuration = getConfiguration();
         
         try {
-            LOG.info("Start network procy [" + configuration.getHostname() + "] on port [" + configuration.getPort() + "]...");
+            LOG.info("Start network proxy [" + configuration.getHostname() + "] on port [" + configuration.getPort() + "]...");
 
             // create routing
             RoutingHandler routingHandler = Handlers.routing();
@@ -219,16 +228,23 @@ public class NetworkProxy implements Runnable {
             // add routes
             HealthHttpHandler.addHandler(configuration, routingHandler);
             // TODO: ResourceHandler.addHandler(configuration, routingHandler);
-            
+
+            LoadBalancingProxyClient loadBalancer = new LoadBalancingProxyClient()
+                    .setConnectionsPerThread(configuration.getConnectionsByThread());
+            for (URI uri : configuration.getRemoteServerList()) {
+                loadBalancer.addHost(uri);
+            }
+
             // create simple server
-            server = Undertow.builder()
+            reverseProxy = Undertow.builder()
                     .setIoThreads(configuration.getIoThreads()).setWorkerThreads(configuration.getWorkerThreads())
                     .addHttpListener(configuration.getPort(), configuration.getHostname(), AccessLogHttpHandler.addHandler(configuration, routingHandler))
+                    .setHandler(ProxyHandler.builder().setProxyClient(loadBalancer).setMaxRequestTime(configuration.getMaxRequestTime()).build())
                    .build();
-            server.start();
+            reverseProxy.start();
             
             if (!VerboseLevel.NONE.equals(verboseLevel)) {
-                lifecycleLogger.printServerStartup(configuration, server.getListenerInfo());
+                lifecycleLogger.printServerStartup(configuration, reverseProxy.getListenerInfo());
             }
         } catch (RuntimeException ex) {
             hasError = true;

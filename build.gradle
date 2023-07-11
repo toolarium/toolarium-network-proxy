@@ -13,7 +13,7 @@ apply from: "https://raw.githubusercontent.com/toolarium/common-gradle-build/mas
 /***************************************************************************************
  * define the main class name
  ***************************************************************************************/
-//mainClassName = "com.github.toolarium.network.proxy"
+mainClassName = "com.github.toolarium.network.proxy.NetworkProxy"
 
 
 /****************************************************************************************

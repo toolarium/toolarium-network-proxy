@@ -6,6 +6,9 @@
 package com.github.toolarium.network.proxy.config;
 
 import com.github.toolarium.network.proxy.logger.VerboseLevel;
+import java.net.URI;
+import java.util.List;
+
 
 /**
  * Defines the network proxy configuration
@@ -13,15 +16,14 @@ import com.github.toolarium.network.proxy.logger.VerboseLevel;
  * @author patrick
  */
 public interface INetworkProxyConfiguration {
-
-    /**
-     * Get the remote server name
-     *
-     * @return the remote server name
-     */
-    String getRemoteServerName();
-
     
+    /**
+     * Get the network proxy name
+     *
+     * @return the network proxy name
+     */
+    String getNetworkProxyName();
+
     /**
      * Get the hostname
      *
@@ -39,13 +41,29 @@ public interface INetworkProxyConfiguration {
 
     
     /**
-     * Get the directory
+     * Get the remote server uri list
      *
-     * @return the directory
+     * @return the remote server uri list
      */
-    String getDirectory();
+    List<URI> getRemoteServerList();
 
     
+    /**
+     * Get the number connections by thread
+     *
+     * @return the number connections by thread
+     */
+    int getConnectionsByThread();
+
+    
+    /**
+     * Get the max request time
+     *
+     * @return the max request time
+     */
+    int getMaxRequestTime();
+
+        
     /**
      * Get the verbose level
      *
@@ -150,13 +168,6 @@ public interface INetworkProxyConfiguration {
     String getHealthPath();
 
 
-    /**
-     * Get the resource path  
-     *
-     * @return the resource path
-     */
-    String getResourcePath();
-    
     /**
      * Get the number of I/O threads
      *

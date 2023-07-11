@@ -10,6 +10,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,37 +27,38 @@ import org.slf4j.LoggerFactory;
 public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
     private static final String SLASH = "/";
     private static final String END_VALUE = "].";
-    private static final String PROCESSRUNNER_PROPERTIES = "processrunner.properties";
+    private static final String NETWORKPROXY_PROPERTIES = "networkproxy.properties";
     private static final Logger LOG = LoggerFactory.getLogger(NetworkProxyConfiguration.class);
-    private static final String USER_HOME = System.getProperty("user.home");
-    private String serverName;
+    private String networkProxyName;
     private String hostname;
     private int port;
-    private String directory;
+    private List<URI> remoteServerList;
+    private int connectionsByThread;
+    private int maxRequestTime;
     private VerboseLevel verboseLevel;
     private String accessLogFormatString;
     private String accessLogFilePattern;
     private String basicAuthentication;
     private String healthPath;
-    private String resourcePath;
     private int ioThreads;
     private int workerThreads;
-    
+
     
     /**
      * Constructor for NetworkProxyConfiguration
      */
     public NetworkProxyConfiguration() {
-        this.serverName = "";
+        this.networkProxyName = "";
         this.hostname = "0.0.0.0";
         this.port = 8080;
-        this.directory = ".";
+        this.remoteServerList = new ArrayList<>();
+        this.connectionsByThread = 20; // TODO:
+        this.maxRequestTime = 3000; // TODO:
         this.verboseLevel = VerboseLevel.INFO;
         this.accessLogFormatString = "combined";
         this.accessLogFilePattern = "logs/access-%d{yyyy-MM-dd}.log.gz"; // "logs/access-%d{yyyy-MM-dd}.%i.log.gz"
         this.basicAuthentication = null;
         this.healthPath = "/q/health";
-        this.resourcePath = SLASH;
         this.ioThreads = Math.max(Runtime.getRuntime().availableProcessors(), 2);
         this.workerThreads = ioThreads * 8;
     }
@@ -65,40 +70,41 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
      * @param configuration the configuration
      */
     public NetworkProxyConfiguration(INetworkProxyConfiguration configuration) {
-        this.serverName = configuration.getRemoteServerName();
+        this.networkProxyName = configuration.getNetworkProxyName();
         this.hostname = configuration.getHostname();
         this.port = configuration.getPort();
-        this.directory = configuration.getDirectory();
+        this.remoteServerList = configuration.getRemoteServerList();
+        this.connectionsByThread = configuration.getConnectionsByThread();
+        this.maxRequestTime = configuration.getMaxRequestTime();
         this.verboseLevel = configuration.getVerboseLevel();
         this.accessLogFormatString = configuration.getAccessLogFormatString();
         this.accessLogFilePattern = configuration.getAccessLogFilePattern();
         this.basicAuthentication = configuration.getBasicAuthentication();
         this.healthPath = configuration.getHealthPath();
-        this.resourcePath = configuration.getResourcePath();
         this.ioThreads = configuration.getIoThreads();
         this.workerThreads = configuration.getWorkerThreads();
     }
 
 
     /**
-     * @see com.github.toolarium.process.runner.config.NetworkProxyConfiguration#getRemoteServerName()
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getNetworkProxyName()
      */
     @Override
-    public String getRemoteServerName() {
-        return serverName;
+    public String getNetworkProxyName() {
+        return networkProxyName;
     }
 
     
     /**
-     * Set the server name
+     * Set the network proxy name
      *
-     * @param serverName the server name
+     * @param networkProxyName the network proxy name
      * @return the configuration
      */
-    public NetworkProxyConfiguration setRemoteServerName(String serverName) {
-        if (serverName != null && !serverName.isBlank()) {
-            LOG.debug("Set server name: [" + serverName + "].  ");
-            this.serverName = serverName.trim();
+    public NetworkProxyConfiguration setNetworkProxyName(String networkProxyName) {
+        if (networkProxyName != null && !networkProxyName.isBlank()) {
+            LOG.debug("Set network proxy name: [" + networkProxyName + "].  ");
+            this.networkProxyName = networkProxyName.trim();
         }
         
         return this;
@@ -154,33 +160,87 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         return this;
     }
 
-
+    
     /**
-     * @see com.github.toolarium.process.runner.config.IProcessRunnerConfiguration#getDirectory()
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getRemoteServerList()
      */
     @Override
-    public String getDirectory() {
-        return directory;
+    public List<URI> getRemoteServerList() {
+        return remoteServerList;
     }
 
     
     /**
-     * Set the directory
+     * Set the remote server list
      *
-     * @param directory the directory
+     * @param remoteServerList the remote server list separated by comma
      * @return the configuration
      */
-    public NetworkProxyConfiguration setDirectory(String directory) {
-        LOG.debug("Set directory: [" + directory + END_VALUE);
-        
-        if (directory != null) {
-            this.directory = directory.trim();
-
-            if ("%HOME%".equals(directory) || "$HOME".equals(directory)) {
-                this.directory = USER_HOME;
+    public NetworkProxyConfiguration addRemoteServerList(String remoteServerList) {
+        if (remoteServerList != null && !remoteServerList.isBlank()) {
+            
+            LOG.debug("Add remote server list: [" + remoteServerList + "].  ");
+            String[] remoteServerListSplit = remoteServerList.split(",");
+            if (remoteServerListSplit != null && remoteServerListSplit.length > 0) {
+                for (String name : remoteServerListSplit) {
+                    try {
+                        this.remoteServerList.add(new URI(name.trim()));
+                        LOG.debug("Added remote server: [" + name.trim() + "].  ");
+                    } catch (URISyntaxException e) {
+                        LOG.warn("Could not resove URI of remote server: [" + name + "]: " + e.getMessage());
+                    }
+                }
             }
         }
         
+        return this;
+    }
+
+
+    /**
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getConnectionsByThread()
+     */
+    @Override
+    public int getConnectionsByThread() {
+        return connectionsByThread;
+    }
+
+    
+    /**
+     * Set the number of connections by thread
+     *
+     * @param connectionsByThread the number of connections by thread
+     * @return the configuration
+     */
+    public NetworkProxyConfiguration setConnectionsByThread(Integer connectionsByThread) {
+        if (connectionsByThread != null) {
+            LOG.debug("Set connections by thread: [" + connectionsByThread + END_VALUE);
+            this.connectionsByThread = connectionsByThread;
+        }
+        return this;
+    }
+
+    
+    /**
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getMaxRequestTime()
+     */
+    @Override
+    public int getMaxRequestTime() {
+        return maxRequestTime;
+    }
+
+    
+    /**
+     * Set the max reuqest time
+     *
+     * @param maxRequestTime the max reuqest time
+     * @return the configuration
+     */
+    public NetworkProxyConfiguration setMaxRequestTime(Integer maxRequestTime) {
+        if (maxRequestTime != null) {
+            LOG.debug("Set max reuqest time: [" + maxRequestTime + END_VALUE);
+            this.maxRequestTime = maxRequestTime;
+        }
         return this;
     }
 
@@ -333,31 +393,7 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
 
 
     /**
-     * @see com.github.toolarium.process.runner.config.IProcessRunnerConfiguration#getResourcePath()
-     */
-    @Override
-    public String getResourcePath() {
-        return resourcePath;
-    }
-
-    
-    /**
-     * Set the resource path 
-     *
-     * @param resourcePath the resource path
-     * @return the configuration
-     */
-    public NetworkProxyConfiguration setResourcePath(String resourcePath) {
-        if (resourcePath != null && !resourcePath.isBlank()) {
-            LOG.debug("Set resourcePath: [" + resourcePath + END_VALUE);            
-            this.resourcePath = resourcePath;
-        }
-        return this;
-    }
-
-
-    /**
-     * @see com.github.toolarium.process.runner.config.IProcessRunnerConfiguration#getIoThreads()
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getIoThreads()
      */
     @Override
     public int getIoThreads() {
@@ -382,9 +418,8 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
     }
 
 
-
     /**
-     * @see com.github.toolarium.process.runner.config.IProcessRunnerConfiguration#getWorkerThreads()
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getWorkerThreads()
      */
     @Override
     public int getWorkerThreads() {
@@ -418,10 +453,13 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
             return this;
         }
         
-        setRemoteServerName(readProperty(properties, "serverName", serverName, false));
+        setNetworkProxyName(readProperty(properties, "networkProxyName", networkProxyName, false));
         setHostname(readProperty(properties, "hostname", hostname, false));
         setPort(readProperty(properties, "port", port, false));
-        setDirectory(readProperty(properties, "directory", directory, false));
+        addRemoteServerList(readProperty(properties, "remoteServerList", remoteServerList.toString().replace("[", "").replace("]", ""), false));
+
+        setConnectionsByThread(readProperty(properties, "connectionsByThread", connectionsByThread, false));
+        setMaxRequestTime(readProperty(properties, "maxRequestTime", maxRequestTime, false));
 
         setIoThreads(readProperty(properties, "ioThreads", ioThreads, false));
         setWorkerThreads(readProperty(properties, "workerThreads", workerThreads, false));
@@ -432,7 +470,6 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         
         //setBasicAuthentication(readProperty(properties, "basicAuthentication", basicAuthentication, true));
         setHealthPath(readProperty(properties, "healthPath", healthPath, true));
-        setResourcePath(readProperty(properties, "resourcePath", resourcePath, false));
         return this;
     }
 
@@ -446,10 +483,10 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         Properties properties = null;
         
         try {
-            try (InputStream stream = this.getClass().getResourceAsStream(SLASH + PROCESSRUNNER_PROPERTIES)) {
+            try (InputStream stream = this.getClass().getResourceAsStream(SLASH + NETWORKPROXY_PROPERTIES)) {
                 int countEntries = 0;
                 if (stream != null) {
-                    LOG.debug("Found " + PROCESSRUNNER_PROPERTIES + "...");
+                    LOG.debug("Found " + NETWORKPROXY_PROPERTIES + "...");
                     properties = new Properties();
                     String line;
                     InputStreamReader inputStreamReader = new InputStreamReader(stream);
@@ -473,7 +510,7 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
                 }
             }
         } catch (IOException ex) { 
-            LOG.info("Could not read and parse confuguration " + PROCESSRUNNER_PROPERTIES + " from classpath.");
+            LOG.info("Could not read and parse confuguration " + NETWORKPROXY_PROPERTIES + " from classpath.");
         }
         
         return properties;
@@ -494,15 +531,15 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         
         if (result == null || result.isBlank()) {
             if (allowEmptyValue) {
-                LOG.debug("Assign property [" + name + "] = [" + result + "] from " + PROCESSRUNNER_PROPERTIES + ".");
+                LOG.debug("Assign property [" + name + "] = [" + result + "] from " + NETWORKPROXY_PROPERTIES + ".");
                 return result;
             } else {
-                LOG.debug("Assign default property [" + name + "] = [" + defaultValue + "] from " + PROCESSRUNNER_PROPERTIES + ".");
+                LOG.debug("Assign default property [" + name + "] = [" + defaultValue + "] from " + NETWORKPROXY_PROPERTIES + ".");
                 return defaultValue;
             }
         } else {
             if (!result.equals(defaultValue)) {
-                LOG.debug("Assign property [" + name + "] = [" + result + "] from " + PROCESSRUNNER_PROPERTIES + ".");
+                LOG.debug("Assign property [" + name + "] = [" + result + "] from " + NETWORKPROXY_PROPERTIES + ".");
             }
         }
         
