@@ -7,9 +7,6 @@ package com.github.toolarium.network.proxy.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.github.toolarium.network.proxy.config.INetworkProxyNode;
-import com.github.toolarium.network.proxy.config.NetworkProxyNode;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -17,7 +14,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.Test;
 
 
@@ -115,18 +111,13 @@ public class JSONUtilTest {
         assertEquals(map1, map3);
         
         String h = "{\"/tt/\":[\"http:localhost:8080/q/health\", \"http://localhost:8080/\"]}";
+        @SuppressWarnings("unchecked")
         Map<String, List<String>> map4 = JSONUtil.getInstance().read(Map.class, h);
-//        assertEquals(map1, map4);
+        assertEquals("{/tt/=[http:localhost:8080/q/health, http://localhost:8080/]}", map4.toString());
         
-        
-        NetworkProxyNode n = new NetworkProxyNode();
-        
-        System.err.println("==>" + JSONUtil.getInstance().write(n, false));
-
-        INetworkProxyNode p = JSONUtil.getInstance().read(NetworkProxyNode.class, "{\"name\":\"\",\"resource\":\"/\",\"methods\":[\"GET\",\"PATCH\",\"PUT\",\"POST\",\"DELETE\"],\"instances\":[]}");
-        System.err.println("==>" + p);
-        
-        List<INetworkProxyNode> p2 = JSONUtil.getInstance().read(List.class, "{\"resource\":\"/\", \"resource\":\"/ff\"}");
-        System.err.println("==>" + p2);
+        //NetworkProxyNode n = new NetworkProxyNode();
+        //("==>" + JSONUtil.getInstance().write(n, false));
+        //INetworkProxyNode p = JSONUtil.getInstance().read(NetworkProxyNode.class, "{\"name\":\"\",\"resource\":\"/\",\"methods\":[\"GET\",\"PATCH\",\"PUT\",\"POST\",\"DELETE\"],\"instances\":[]}");
+        //("==>" + p);
     }
 }
