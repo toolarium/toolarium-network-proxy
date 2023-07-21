@@ -5,25 +5,20 @@
  */
 package com.github.toolarium.network.proxy;
 
-import java.net.URI;
-
-import org.fusesource.jansi.AnsiConsole;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.github.toolarium.network.proxy.config.INetworkProxyConfiguration;
 import com.github.toolarium.network.proxy.config.NetworkProxyConfiguration;
 import com.github.toolarium.network.proxy.handler.health.HealthHttpHandler;
+import com.github.toolarium.network.proxy.handler.route.RouteHandler;
 import com.github.toolarium.network.proxy.logger.LifecycleLogger;
 import com.github.toolarium.network.proxy.logger.VerboseLevel;
 import com.github.toolarium.network.proxy.logger.access.AccessLogHttpHandler;
-
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.server.RoutingHandler;
-import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
-import io.undertow.server.handlers.proxy.ProxyHandler;
 import jptools.runtime.ReflectionUtil;
+import org.fusesource.jansi.AnsiConsole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Help.ColorScheme;
@@ -32,8 +27,6 @@ import picocli.CommandLine.Option;
 
 /**
  * The network proxy.
- *
- * <p>! This is just a sample please remove it. !</p>
  */
 @Command(name = "networkproxy", mixinStandardHelpOptions = true, version = "networkproxy v" + Version.VERSION, description = "Network proxy.")
 public class NetworkProxy implements Runnable {
@@ -50,8 +43,8 @@ public class NetworkProxy implements Runnable {
     private String hostname;
     @Option(names = { "-p", "--port" }, paramLabel = "port", description = "The port, by default 8080.")
     private Integer port;
-    @Option(names = { "--proxy" }, paramLabel = "remoteServerList", description = "The remote server list.")
-    private String remoteServerList;
+    @Option(names = { "--node" }, paramLabel = "networkProxyNodeList", description = "The network proxy nodes.")
+    private String[] networkProxyNodeList;
     @Option(names = { "--connectionsByThread" }, paramLabel = "connectionsByThread", description = "The number of connections by thread, by default 20.")
     private Integer connectionsByThread;
     @Option(names = { "--maxRequestTime" }, paramLabel = "maxRequestTime", description = "The number of max max request time.")
@@ -60,6 +53,10 @@ public class NetworkProxy implements Runnable {
     private String healthPath;    
     @Option(names = { "--basicauth" }, paramLabel = "authentication", description = "The basic authentication: user:password, by default disabled.")
     private String basicAuth;
+    @Option(names = { "--ioThreads" }, paramLabel = "ioThreads", description = "The number of I/O threads.")
+    private Integer ioThreads;
+    @Option(names = { "--workerThreads" }, paramLabel = "workerThreads", description = "The number of worker threads.")
+    private Integer workerThreads;
     @Option(names = { "--name" }, paramLabel = "networkProxyName", defaultValue = "", description = "The network proxy name.")
     private String networkProxyName;    
     @Option(names = { "--verbose" }, paramLabel = "verboseLevel", defaultValue = "INFO", description = "Specify the verbose level: (${COMPLETION-CANDIDATES}), by default INFO.")
@@ -77,8 +74,8 @@ public class NetworkProxy implements Runnable {
     private LifecycleLogger lifecycleLogger;
     private transient Undertow reverseProxy;
     private boolean hasError;
-    
 
+    
     /**
      * Constructor for NetworkProxy
      */
@@ -87,6 +84,7 @@ public class NetworkProxy implements Runnable {
         lifecycleLogger = new LifecycleLogger();
         reverseProxy = null;
         hasError = false;
+        networkProxyName = "toolarium-network-proxy";
     }
 
 
@@ -99,13 +97,14 @@ public class NetworkProxy implements Runnable {
         if (configuration == null) {
             setConfiguration(new NetworkProxyConfiguration()
                     .readProperties()
-                    .setNetworkProxyName(networkProxyName)
                     .setHostname(hostname).setPort(port)
-                    .addRemoteServerList(remoteServerList)
+                    .setNetworkProxyNodeList(networkProxyNodeList)
                     .setConnectionsByThread(connectionsByThread)
                     .setMaxRequestTime(maxRequestTime)
-                    .setBasicAuthentication(basicAuth)
                     .setHealthPath(healthPath)
+                    .setBasicAuthentication(basicAuth)
+                    .setIoThreads(ioThreads).setWorkerThreads(workerThreads)
+                    .setNetworkProxyName(networkProxyName)
                     .setVerboseLevel(verboseLevel).setAccessLogFilePattern(accessLogFilePattern).setAccessLogFormatString(accessLogFormatString));
         }
 
@@ -227,19 +226,15 @@ public class NetworkProxy implements Runnable {
             
             // add routes
             HealthHttpHandler.addHandler(configuration, routingHandler);
-            // TODO: ResourceHandler.addHandler(configuration, routingHandler);
 
-            LoadBalancingProxyClient loadBalancer = new LoadBalancingProxyClient()
-                    .setConnectionsPerThread(configuration.getConnectionsByThread());
-            for (URI uri : configuration.getRemoteServerList()) {
-                loadBalancer.addHost(uri);
-            }
+            // add routes for backend nodes
+            RouteHandler.addHandler(configuration, routingHandler);
 
             // create simple server
             reverseProxy = Undertow.builder()
                     .setIoThreads(configuration.getIoThreads()).setWorkerThreads(configuration.getWorkerThreads())
                     .addHttpListener(configuration.getPort(), configuration.getHostname(), AccessLogHttpHandler.addHandler(configuration, routingHandler))
-                    .setHandler(ProxyHandler.builder().setProxyClient(loadBalancer).setMaxRequestTime(configuration.getMaxRequestTime()).build())
+                    .setHandler(routingHandler)
                    .build();
             reverseProxy.start();
             

@@ -6,25 +6,33 @@
 package com.github.toolarium.network.proxy.config;
 
 import com.github.toolarium.network.proxy.logger.VerboseLevel;
+import com.github.toolarium.network.proxy.util.JSONUtil;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Serializable;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 /**
- * Define the process runner configuration
+ * Implements the {@link INetworkProxyConfiguration}.
  * 
  * @author patrick
  */
-public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
+public class NetworkProxyConfiguration implements INetworkProxyConfiguration, Serializable {
+    private static final long serialVersionUID = 8324592129149179327L;
     private static final String SLASH = "/";
     private static final String END_VALUE = "].";
     private static final String NETWORKPROXY_PROPERTIES = "networkproxy.properties";
@@ -32,7 +40,7 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
     private String networkProxyName;
     private String hostname;
     private int port;
-    private List<URI> remoteServerList;
+    private Map<String, NetworkProxyNode> networkProxyNodeMap;
     private int connectionsByThread;
     private int maxRequestTime;
     private VerboseLevel verboseLevel;
@@ -51,7 +59,7 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         this.networkProxyName = "";
         this.hostname = "0.0.0.0";
         this.port = 8080;
-        this.remoteServerList = new ArrayList<>();
+        this.networkProxyNodeMap = new ConcurrentHashMap<>();
         this.connectionsByThread = 20; // TODO:
         this.maxRequestTime = 3000; // TODO:
         this.verboseLevel = VerboseLevel.INFO;
@@ -70,10 +78,11 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
      * @param configuration the configuration
      */
     public NetworkProxyConfiguration(INetworkProxyConfiguration configuration) {
+        this();
         this.networkProxyName = configuration.getNetworkProxyName();
         this.hostname = configuration.getHostname();
         this.port = configuration.getPort();
-        this.remoteServerList = configuration.getRemoteServerList();
+        setNetworkProxyNodeList(configuration.getNetworkProxyNodeList());
         this.connectionsByThread = configuration.getConnectionsByThread();
         this.maxRequestTime = configuration.getMaxRequestTime();
         this.verboseLevel = configuration.getVerboseLevel();
@@ -162,41 +171,111 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
 
     
     /**
-     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getRemoteServerList()
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getNetworkProxyNodeResources()
      */
     @Override
-    public List<URI> getRemoteServerList() {
-        return remoteServerList;
+    public Set<String> getNetworkProxyNodeResources() {
+        return new TreeSet<>(networkProxyNodeMap.keySet());
+    }
+
+
+    /**
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getNetworkProxyNode(java.lang.String)
+     */
+    @Override
+    public INetworkProxyNode getNetworkProxyNode(String resource) {
+        return networkProxyNodeMap.get(resource);
+    }
+
+
+    /**
+     * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getNetworkProxyNodeList()
+     */
+    @Override
+    public List<INetworkProxyNode> getNetworkProxyNodeList() {
+        List<INetworkProxyNode> result = new ArrayList<>(networkProxyNodeMap.values());
+
+        // sort;
+        Collections.sort(result, new Comparator<INetworkProxyNode>() {
+            /**
+             * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
+             */
+            @Override
+            public int compare(INetworkProxyNode o1, INetworkProxyNode o2) {
+                return o1.getResource().compareToIgnoreCase(o2.getResource());
+            }
+
+        });
+     
+        return result;
+    }
+
+
+    /**
+     * Add a network proxy node 
+     *
+     * @param name the name or null
+     * @param inputResourcePath the resource path
+     * @param methods the supported methods or null
+     * @param uri the uri to add
+     * @return the configuration
+     */
+    public NetworkProxyNode addNetworkProxyNode(String name, String inputResourcePath, List<String> methods, URI uri) {
+        
+        String resourcePath = inputResourcePath;
+        if (resourcePath == null || resourcePath.isBlank()) {
+            resourcePath = "/";
+        } else {
+            resourcePath = resourcePath.trim();
+        }
+        
+        if (!resourcePath.endsWith("/")) {
+            resourcePath += "/";
+        }
+        
+        NetworkProxyNode networkProxyNode = networkProxyNodeMap.get(resourcePath);
+        if (networkProxyNode == null) {
+            networkProxyNode = new NetworkProxyNode(name, resourcePath, methods, new ArrayList<>());
+            networkProxyNodeMap.put(resourcePath, networkProxyNode);
+        }
+        
+        if (uri != null) {
+            networkProxyNode.addInstance(uri);
+        }
+        return networkProxyNode;
     }
 
     
     /**
-     * Set the remote server list
+     * Set the network proxy node list
      *
-     * @param remoteServerList the remote server list separated by comma
+     * @param inputNetworkProxyNodeList the network node list 
      * @return the configuration
      */
-    public NetworkProxyConfiguration addRemoteServerList(String remoteServerList) {
-        if (remoteServerList != null && !remoteServerList.isBlank()) {
-            
-            LOG.debug("Add remote server list: [" + remoteServerList + "].  ");
-            String[] remoteServerListSplit = remoteServerList.split(",");
-            if (remoteServerListSplit != null && remoteServerListSplit.length > 0) {
-                for (String name : remoteServerListSplit) {
-                    try {
-                        this.remoteServerList.add(new URI(name.trim()));
-                        LOG.debug("Added remote server: [" + name.trim() + "].  ");
-                    } catch (URISyntaxException e) {
-                        LOG.warn("Could not resove URI of remote server: [" + name + "]: " + e.getMessage());
-                    }
-                }
-            }
-        }
-        
+    public NetworkProxyConfiguration setNetworkProxyNodeList(String... inputNetworkProxyNodeList) {
+        setNetworkProxyNodeList(NetworkProxyConfigurationParser.getInstance().parse(inputNetworkProxyNodeList));
         return this;
     }
 
+    
+    /**
+     * Set the network proxy node list
+     *
+     * @param networkProxyNodeList the network node list
+     * @return the configuration
+     */
+    public NetworkProxyConfiguration setNetworkProxyNodeList(List<INetworkProxyNode> networkProxyNodeList) {
+        this.networkProxyNodeMap = new ConcurrentHashMap<String, NetworkProxyNode>();
+        
+        if (networkProxyNodeList != null) {
+            for (INetworkProxyNode networkProxyNode : networkProxyNodeList) {
+                this.networkProxyNodeMap.put(networkProxyNode.getResource(), new NetworkProxyNode(networkProxyNode.getName(), networkProxyNode.getResource(), networkProxyNode.getMethods(), networkProxyNode.getInstances()));
+            }
+        }
+        return this;
+    }
 
+    
     /**
      * @see com.github.toolarium.network.proxy.config.INetworkProxyConfiguration#getConnectionsByThread()
      */
@@ -456,8 +535,12 @@ public class NetworkProxyConfiguration implements INetworkProxyConfiguration {
         setNetworkProxyName(readProperty(properties, "networkProxyName", networkProxyName, false));
         setHostname(readProperty(properties, "hostname", hostname, false));
         setPort(readProperty(properties, "port", port, false));
-        addRemoteServerList(readProperty(properties, "remoteServerList", remoteServerList.toString().replace("[", "").replace("]", ""), false));
-
+        
+        String networkProxyNodeMapJson = "";
+        if (!networkProxyNodeMap.isEmpty()) {
+            networkProxyNodeMapJson = JSONUtil.getInstance().write(networkProxyNodeMap, false);
+        }
+        setNetworkProxyNodeList(readProperty(properties, "networkProxyNodes", networkProxyNodeMapJson, false));
         setConnectionsByThread(readProperty(properties, "connectionsByThread", connectionsByThread, false));
         setMaxRequestTime(readProperty(properties, "maxRequestTime", maxRequestTime, false));
 

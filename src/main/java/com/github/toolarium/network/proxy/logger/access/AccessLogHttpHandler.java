@@ -36,7 +36,8 @@ public final class AccessLogHttpHandler {
     public static HttpHandler addHandler(final INetworkProxyConfiguration configuration, final HttpHandler handlerToWrap) {
         
         if (VerboseLevel.VERBOSE.equals(configuration.getVerboseLevel()) || VerboseLevel.ACCESS.equals(configuration.getVerboseLevel())) {
-            final AccessLogReceiver accessLogReceiver = new FileAccessLogReceiver("");
+            String name = "access"; // TODO: - configuration.getNetworkProxyName();
+            final AccessLogReceiver accessLogReceiver = new FileAccessLogReceiver(name);
             return new AccessLogHandler(handlerToWrap, accessLogReceiver, configuration.getAccessLogFormatString(), AccessLogHttpHandler.class.getClassLoader());
         } else if (VerboseLevel.ACCESS_CONSOLE.equals(configuration.getVerboseLevel())) {
             //LogbackUtil.getInstance().detachAppender(ACCESSLOG_APPENDER_NAME);

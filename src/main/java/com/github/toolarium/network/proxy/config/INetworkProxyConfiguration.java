@@ -6,8 +6,8 @@
 package com.github.toolarium.network.proxy.config;
 
 import com.github.toolarium.network.proxy.logger.VerboseLevel;
-import java.net.URI;
 import java.util.List;
+import java.util.Set;
 
 
 /**
@@ -24,6 +24,7 @@ public interface INetworkProxyConfiguration {
      */
     String getNetworkProxyName();
 
+    
     /**
      * Get the hostname
      *
@@ -41,11 +42,28 @@ public interface INetworkProxyConfiguration {
 
     
     /**
-     * Get the remote server uri list
+     * Get the network proxy node resources
      *
-     * @return the remote server uri list
+     * @return the network proxy node resources.
      */
-    List<URI> getRemoteServerList();
+    Set<String> getNetworkProxyNodeResources();
+
+    
+    /**
+     * Get the network proxy node instance list
+     * 
+     * @param resource the resource
+     * @return the network proxy node list.
+     */
+    INetworkProxyNode getNetworkProxyNode(String resource);
+
+    
+    /**
+     * Get the network proxy node list
+     *
+     * @return the network proxy node list.
+     */
+    List<INetworkProxyNode> getNetworkProxyNodeList();
 
     
     /**

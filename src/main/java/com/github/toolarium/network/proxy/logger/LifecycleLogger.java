@@ -7,6 +7,7 @@ package com.github.toolarium.network.proxy.logger;
 
 import com.github.toolarium.network.proxy.Version;
 import com.github.toolarium.network.proxy.config.INetworkProxyConfiguration;
+import com.github.toolarium.network.proxy.config.INetworkProxyNode;
 import com.github.toolarium.network.proxy.logger.ansi.ColoredStackTraceWriter;
 import io.undertow.Undertow.ListenerInfo;
 import java.io.PrintWriter;
@@ -14,6 +15,9 @@ import java.io.StringWriter;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,12 +102,11 @@ public class LifecycleLogger {
      * @return the server message
      */
     protected String prepareServerStartup(ColorScheme colorScheme, INetworkProxyConfiguration configuration, List<ListenerInfo> listenerInfoList) {
-        final String resourcePath = prepareResourcePath(configuration);
         StringBuilder message = new StringBuilder();
         message.append(NL).append(LINE).append(NL);
         
         preapreTitle(colorScheme, message, configuration);
-        prepareListener(colorScheme, message, configuration, listenerInfoList, resourcePath);
+        prepareListener(colorScheme, message, configuration, listenerInfoList);
 
         if (listenerInfoList != null) { 
             if (configuration.hasHealthCheck()) {
@@ -120,28 +123,11 @@ public class LifecycleLogger {
             }
             */
         }
-        
+
+        prepareRouting(colorScheme, message, configuration);
+                        
         message.append(LINE).append(NL);
         return message.toString();
-    }
-
-    
-    /**
-     * Prepare the resource path
-     * 
-     * @param configuration the configuration
-     * @return the prepared resource path
-     */
-    private String prepareResourcePath(INetworkProxyConfiguration configuration) {
-        String resourcePath = configuration.getResourcePath();
-        if (!resourcePath.isEmpty() && !resourcePath.startsWith(SLASH)) {
-            resourcePath = SLASH + resourcePath;
-        }
-
-        if (!resourcePath.endsWith(SLASH)) { 
-            resourcePath += SLASH;
-        }
-        return resourcePath;
     }
 
     
@@ -155,9 +141,9 @@ public class LifecycleLogger {
      */
     private StringBuilder preapreTitle(ColorScheme colorScheme, StringBuilder message, INetworkProxyConfiguration configuration) {
         message.append("  ");
-        if (configuration.getRemoteServerName() != null && !configuration.getRemoteServerName().isBlank()) {
+        if (configuration.getNetworkProxyName() != null && !configuration.getNetworkProxyName().isBlank()) {
             //title = "" + parameterText(configuration.getWebserverName()) + " (powered by " + APP + ")";
-            message.append(parameterText(colorScheme, configuration.getRemoteServerName())).append(" (powered by ").append(APP).append(")");
+            message.append(parameterText(colorScheme, configuration.getNetworkProxyName())).append(" (powered by ").append(APP).append(")");
 
         } else {
             message.append(parameterText(colorScheme, APP)); /*Ansi.AUTO.string("@|bold,blue " + APP + "!|@")*/
@@ -174,10 +160,14 @@ public class LifecycleLogger {
      * @param message the message
      * @param configuration the configuration
      * @param listenerInfoList the listener list
-     * @param resourcePath the resource path
      * @return the message
      */
-    private StringBuilder prepareListener(ColorScheme colorScheme, StringBuilder message, INetworkProxyConfiguration configuration, List<ListenerInfo> listenerInfoList, String resourcePath) {
+    private StringBuilder prepareListener(ColorScheme colorScheme, StringBuilder message, INetworkProxyConfiguration configuration, List<ListenerInfo> listenerInfoList) {
+        prepareHeader(message, "Timestamp");
+        String instantStr = Instant.now().truncatedTo(ChronoUnit.MILLIS).toString().replaceAll("[TZ]", " ");
+        message.append(commandText(colorScheme, instantStr));
+        message.append(NL);
+
         if (listenerInfoList != null && !listenerInfoList.isEmpty()) {
             for (ListenerInfo listenerInfo : listenerInfoList) {
                 StringBuilder listenerInfoMessage = new StringBuilder();
@@ -198,10 +188,6 @@ public class LifecycleLogger {
                     }
                 }
                 listenerInfoMessage.append(listenerAddress);
-                
-                if (!SLASH.equals(resourcePath)) {
-                    listenerInfoMessage.append(resourcePath);
-                }
                 listenerInfoMessage.append(NL);
                 
                 prepareHeader(message, "Listener");
@@ -212,8 +198,63 @@ public class LifecycleLogger {
         return message;
     }
 
+    
+    /**
+     * Prepare the routing
+     * 
+     * @param colorScheme the color schema
+     * @param message the message
+     * @param configuration the configuration
+     * @return the message
+     */
+    private StringBuilder prepareRouting(ColorScheme colorScheme, StringBuilder message, INetworkProxyConfiguration configuration) {
+        if (configuration != null && configuration.getNetworkProxyNodeList() != null && !configuration.getNetworkProxyNodeList().isEmpty()) {
+            prepareHeader(message, "Proxy");
+            message.append(NL);
+            
+            for (INetworkProxyNode node : configuration.getNetworkProxyNodeList()) {
+                message.append("    - " + commandText(colorScheme, node.getResource()));
+                
+                if (node.getInstances() != null && !node.getInstances().isEmpty()) {
+                    if (node.getName() != null && !node.getName().equals(node.getResource())) {
+                        message.append(NL);
+                        message.append("       - NAME  " + commandText(colorScheme, node.getName()));
+                    }
+                    
+                    message.append(NL);
+                    message.append("       - URL   ");
+                    
+                    int lineLength = 0;
+                    int i = 0;
+                    for (URI uri : node.getInstances()) {
+                        if (i > 0) {
+                            message.append(",");
+                            lineLength++;
+                        }
+    
+                        String uriStr = uri.toString();
+                        if (lineLength + uriStr.length() > 74) {
+                            message.append(NL);
+                            message.append("               ");
+                            lineLength = 0;
+                        }
+                        
+                        lineLength += uriStr.length();
+                        message.append(commandText(colorScheme, uriStr));
+                        i++;
+                    }
+                } else {
+                    message.append("n/a");
+                }
+                
+                message.append(NL);
+            }
+        }
 
+        return message;
+    }
 
+    
     /**
      * Command text
      *
